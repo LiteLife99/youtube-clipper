@@ -27,9 +27,12 @@ def run_yt_dlp_clip(url, start, end, clip_id):
     ]
 
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, capture_output=True, text=True)
         return output_path
     except subprocess.CalledProcessError as e:
+        st.error(f"Command Failed: {e.cmd}")
+        st.error(f"Stdout: {e.stdout}")
+        st.error(f"Stderr: {e.stderr}")
         return None
 
 
