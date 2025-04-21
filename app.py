@@ -2,9 +2,6 @@
 import os
 import subprocess
 import streamlit as st
-import imageio_ffmpeg
-
-os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 # === CONFIG ===
 OUTPUT_DIR = "clips"
