@@ -2,6 +2,7 @@
 import os
 import subprocess
 import streamlit as st
+import uuid
 
 # === CONFIG ===
 OUTPUT_DIR = "clips"
@@ -11,13 +12,17 @@ YTDLP_FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 
 def run_yt_dlp_clip(url, start, end, clip_id):
     section = f"*{start}-{end}"
-    output_path = os.path.join(OUTPUT_DIR, f"clip_{clip_id}.mp4")
+    id = uuid.uuid4()
+    output_path = os.path.join(OUTPUT_DIR, f"clip_{clip_id}_{id}.mp4")
 
     command = [
         "yt-dlp",
         "--download-sections", section,
         "--merge-output-format", "mp4",
         "--no-write-subs",
+        "--no-part",
+        "--force-keyframes-at-cuts",
+        "--no-cache-dir",
         "-f", YTDLP_FORMAT,
         "-o", output_path,
         url
@@ -68,9 +73,9 @@ def main():
                             st.download_button(
                                 label=f"🔽 Download Clip {clip_path}",
                                 data=f,
-                                file_name=f"clip_{i+1}.mp4",
+                                file_name=f"{clip_path}.mp4",
                                 mime="video/mp4",
-                                key=f"download_{i}"
+                                key=f"download_{clip_path}"
                             )
                     else:
                         st.error(f"❌ Failed to download clip from {start} to {end}")
