@@ -66,16 +66,19 @@ def main():
                     start, end = map(str.strip, ts.split("-"))
                     clip_path = run_yt_dlp_clip(url, start, end, clip_counter)
                     if clip_path:
-                        st.success(f"✅ Clip saved: {clip_path}")
-                        st.session_state.results.append(clip_path)
+                        st.success(f"✅ Clip saved: {clip_path}. Download Below:")
+                        with open(clip_path, "rb") as f:
+                            st.download_button(
+                                label=f"🔽 Download Clip {clip_path}",
+                                data=f,
+                                file_name=f"clip_{i+1}.mp4",
+                                mime="video/mp4",
+                                key=f"download_{i}"
+                            )
                     else:
                         st.error(f"❌ Failed to download clip from {start} to {end}")
                     clip_counter += 1
 
-    if st.session_state.results:
-        st.subheader("📂 Downloaded Clips")
-        for path in st.session_state.results:
-            st.write(path)
 
 
 if __name__ == "__main__":
