@@ -1,87 +1,176 @@
-
-import os
-import subprocess
 import streamlit as st
+import yt_dlp
+import os
 import uuid
+import subprocess
+import time
 
-# === CONFIG ===
-OUTPUT_DIR = "clips"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-YTDLP_FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+output_dir = "clips"
+videos_to_keep = []
+
+st.set_page_config(page_title="🎬 YouTube Clip Downloader", layout="wide")
+
+st.title("🎬 YouTube Clip Downloader")
+st.caption("Download specific clips from YouTube videos — fast and efficient!")
+
+st.markdown("""
+            <style>
+                div[data-testid="stColumn"] {
+                    width: fit-content !important;
+                    flex: unset;
+                }
+                div[data-testid="stColumn"] * {
+                    width: fit-content !important;
+                }
+                button[kind="primary"] {
+                    margin-top: -5px !important;
+                    font-size: 13px;
+                    color: white;
+                    background-color: red;
+                    border: 1px solid red;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    display: inline-flex;  
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+
+if "videos" not in st.session_state:
+    st.session_state.videos = [{"id": str(uuid.uuid4()), "url": "", "clips": []}]
+
+# Add new video input
+if st.button("➕ Add New Video"):
+    st.session_state.videos.append({"id": str(uuid.uuid4()), "url": "", "clips": []})
+
+# Display each video input
+for i, video in enumerate(st.session_state.videos):
+    with st.expander(f"🎥 Video {i + 1}", expanded=True):
+
+        # Create top row: left = title, right = remove button
+        top_row = st.columns([1, 1])
+        with top_row[0]:
+            st.markdown(f"**YouTube Video {i + 1}**")
+        with top_row[1]:
+            remove = st.button("Remove", type="primary", key=f"remove_clip_{video['id']}")
+
+        warning_placeholder = st.empty()  # Placeholder for the warning
+
+        if remove:
+            # If this is the last video, show a warning
+            if len(st.session_state.videos) == 1:
+                warning_placeholder.warning("⚠️ You cannot remove the last video. Please keep at least one video.")
+                time.sleep(3)  # Wait for 3 seconds
+                warning_placeholder.empty()  # Remove the warning after 3 seconds
+            else:
+                continue  # Skip this video from the list (i.e., remove it)
+
+        video["url"] = st.text_input("YouTube URL", key=f"url_{video['id']}", value=video.get("url", ""))
+
+        if f"clips_{video['id']}" not in st.session_state:
+            st.session_state[f"clips_{video['id']}"] = []
+
+        st.write("Clips (Start and End Times in HH:MM:SS)")
+        cols = st.columns([1, 1, 1])
+        start_time = cols[0].text_input("Start", key=f"start_{video['id']}")
+        end_time = cols[1].text_input("End", key=f"end_{video['id']}")
+        custom_name = cols[2].text_input("Custom name (mandatory). Example: phuket_phi-phi-tour_clip1", key=f"name_{video['id']}")
 
 
-def run_yt_dlp_clip(url, start, end, clip_id):
-    section = f"*{start}-{end}"
-    id = uuid.uuid4()
-    output_path = os.path.join(OUTPUT_DIR, f"clip_{clip_id}_{id}.mp4")
+        if st.button("Add Clip", key=f"add_clip_{video['id']}"):
+            if start_time and end_time and custom_name:
+                safe_name = custom_name.strip().replace(" ", "_").replace("/", "-")
+                st.session_state[f"clips_{video['id']}"].append((start_time, end_time, safe_name))
+            else:
+                st.warning("Start, End, and Custom Name are all required.")
+
+        for idx, (start, end, custom_name) in enumerate(st.session_state[f"clips_{video['id']}"]):
+            st.write(f"🔹 Clip {idx + 1}: {start} → {end} -> {custom_name}")
+
+        # Update video object with clips
+        video["clips"] = st.session_state[f"clips_{video['id']}"]
+        videos_to_keep.append(video)
+
+# Update state
+st.session_state.videos = videos_to_keep
+
+def get_direct_video_url(video_url):
+    # Step 1: Get the direct video URL using yt-dlp -g
+    result = subprocess.run(
+        ['yt-dlp', '-g', video_url],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True
+    )
+    direct_url = result.stdout.strip().splitlines()[0]
+    return direct_url
+
+def download_clip_ffmpeg(video_url, start_time, end_time, output_path):
+    direct_url = get_direct_video_url(video_url)
 
     command = [
-        "yt-dlp",
-        "--download-sections", section,
-        "--merge-output-format", "mp4",
-        "--no-write-subs",
-        "--no-part",
-        "--force-keyframes-at-cuts",
-        "--no-cache-dir",
-        "-f", YTDLP_FORMAT,
-        "-o", output_path,
-        url
+        'ffmpeg',
+        '-y',  # <--- Force overwrite if file already exists in system dir
+        '-ss', start_time,
+        '-to', end_time,
+        '-i', direct_url,
+        '-c', 'copy',  # fast, no re-encoding
+        output_path
     ]
 
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
-        return output_path
+        subprocess.run(command, check=True)
+        print(f"✅ Clip saved: {output_path}")
+        return True
     except subprocess.CalledProcessError as e:
-        st.error(f"Command Failed: {e.cmd}")
-        st.error(f"Stdout: {e.stdout}")
-        st.error(f"Stderr: {e.stderr}")
-        return None
+        print(f"❌ Failed: {e}")
+        return False
+    
+with st.container():
+    col1, col2 = st.columns(2)
+    with col1:
+        download_triggered = st.button("🚀 Download All Clips")
+    with col2:
+        clear_cache_triggered = st.button("🧹 Clear Server Cache")
 
+# Download Clips
+if download_triggered:
+    os.makedirs(output_dir, exist_ok=True)
 
-def main():
-    st.title("🎬 YouTube Clip Downloader")
+    for video in st.session_state.videos:
+        if not video["url"] or not video["clips"]:
+            continue
 
-    st.markdown("""
-    Enter multiple YouTube video URLs and specify the timestamp ranges (start - end) for each.
-    Videos will be clipped and saved as individual files.
-    """)
+        for idx, (start, end, custom_name) in enumerate(video["clips"]):
+            section = f"*{start}-{end}"
+            output_path = os.path.join(output_dir, f"{custom_name}.mp4")
 
-    num_videos = st.number_input("How many videos do you want to process?", min_value=1, max_value=10, value=1)
+            try:
+                downloaded = download_clip_ffmpeg(video["url"], start_time, end_time, output_path)
+                if downloaded:
+                    with open(output_path, "rb") as f:
+                        st.download_button(
+                            label=f"⬇️ Download Clip {custom_name}.mp4",
+                            data=f,
+                            file_name=f"{custom_name}.mp4",
+                            mime="video/mp4",
+                        )
+            except Exception as e:
+                st.error(f"❌ Error downloading clip {idx + 1}: {e}")
 
-    clip_counter = 1
-    if "results" not in st.session_state:
-        st.session_state.results = []
+if clear_cache_triggered:
+    if os.path.exists(output_dir):
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                st.error(f"Error deleting from server cache {file_path}: {e}")
+        st.success("Cache Cleared successfully.")
+    else:
+        st.warning("Output folder doesn't exist.")
 
-    for i in range(num_videos):
-        st.header(f"📽️ Video {i + 1}")
-        url = st.text_input(f"Video {i + 1} URL", key=f"url_{i}")
-        timestamps_text = st.text_area(f"Timestamps for Video {i + 1} (one per line, format: start - end)", key=f"ts_{i}")
-
-        if st.button(f"Download Clips for Video {i + 1}", key=f"dl_{i}"):
-            if not url.strip():
-                st.warning("Please enter a valid URL.")
-                continue
-
-            timestamps = [line.strip() for line in timestamps_text.strip().splitlines() if "-" in line]
-            with st.spinner(f"Processing video {i + 1}..."):
-                for ts in timestamps:
-                    start, end = map(str.strip, ts.split("-"))
-                    clip_path = run_yt_dlp_clip(url, start, end, clip_counter)
-                    if clip_path:
-                        st.success(f"✅ Clip saved: {clip_path}. Download Below:")
-                        with open(clip_path, "rb") as f:
-                            st.download_button(
-                                label=f"🔽 Download Clip {clip_path}",
-                                data=f,
-                                file_name=f"{clip_path}.mp4",
-                                mime="video/mp4",
-                                key=f"download_{clip_path}"
-                            )
-                    else:
-                        st.error(f"❌ Failed to download clip from {start} to {end}")
-                    clip_counter += 1
-
-
-
-if __name__ == "__main__":
-    main()
+st.info("ℹ️ **Tip:** Remember to clear the cache from time to time to free up server space!")
