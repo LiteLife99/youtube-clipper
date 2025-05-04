@@ -151,7 +151,7 @@ if download_triggered:
                 output_path = os.path.join(output_dir, f"{custom_name}.mp4")
 
                 try:
-                    downloaded = download_clip_ffmpeg(video["url"], start_time, end_time, output_path)
+                    downloaded = download_clip_ffmpeg(video["url"], start, end, output_path)
                     if downloaded:
                         with open(output_path, "rb") as f:
                             st.download_button(
